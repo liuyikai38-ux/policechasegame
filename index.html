@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Police Chase - Typing Game</title>
+<style>
+  /* ---------- Look & colours (edit these to restyle the game) ---------- */
+  :root{
+    --bg:#0d1117;        /* page background   */
+    --panel:#161b22;     /* card background   */
+    --line:#30363d;      /* borders           */
+    --text:#e6edf3;      /* main text         */
+    --muted:#8b949e;     /* small grey labels */
+    --good:#3fb950;      /* correct typing    */
+    --bad:#f85149;       /* mistakes          */
+    --accent:#58a6ff;    /* highlights        */
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:24px 16px;
+    background:var(--bg); color:var(--text);
+    font-family:"Segoe UI",Tahoma,Arial,sans-serif;
+    display:flex; justify-content:center;
+  }
+  .game{width:100%; max-width:840px}
+
+  h1{margin:0 0 4px; font-size:26px}
+  .sub{margin:0 0 18px; color:var(--muted); font-size:14px}
+
+  /* ---------- Stats row ---------- */
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px}
+  .stat{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 12px}
+  .stat .label{font-size:12px; color:var(--muted)}
+  .stat .value{font-size:22px; font-weight:700}
+
+  /* ---------- The road scene ---------- */
+  .scene{
+    position:relative; height:190px; overflow:hidden;
+    border:1px solid var(--line); border-radius:12px;
+    background:linear-gradient(#111a24 0%, #0b1017 70%);
+  }
+  .moon{position:absolute; top:14px; right:24px; font-size:26px; opacity:.8}
+  .road{position:absolute; left:0; right:0; bottom:0; height:104px; background:#20242b; border-top:2px solid #444c56}
+  .lane{
+    position:absolute; left:0; right:0; bottom:48px; height:6px;
+    background:repeating-linear-gradient(90deg,#e3d98a 0 44px, transparent 44px 88px);
+    animation:roll 1.1s linear infinite;
+  }
+  @keyframes roll{ from{background-position-x:0} to{background-position-x:-88px} }
+  .car{position:absolute; font-size:40px; line-height:1; user-select:none}
+  #playerCar{left:72%; bottom:58px; animation:bob 1.4s ease-in-out infinite}
+  #policeCar{left:12%; bottom:34px; transition:left .18s linear}
+  @keyframes bob{ 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+  /* ---------- Distance bar (how far ahead of the police you are) ---------- */
+  .distwrap{margin:12px 0 6px}
+  .distlabel{display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:4px}
+  .distbar{height:14px; background:#22272e; border:1px solid var(--line); border-radius:99px; overflow:hidden}
+  #distFill{height:100%; width:55%; background:var(--good); transition:width .18s linear, background .3s}
+
+  /* ---------- Sentence display ---------- */
+  .prompt{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px; margin:14px 0; text-align:center;
+    font-size:26px; font-family:Consolas,"Courier New",monospace;
+    white-space:pre-wrap; word-break:break-word; min-height:74px;
+  }
+  .ch{color:var(--muted)}
+  .ch.done{color:var(--good)}
+  .ch.err{color:var(--bad); text-decoration:underline}
+  .ch.cur{color:var(--text); border-left:2px solid var(--accent); margin-left:-2px; padding-left:0}
+  .shake{animation:shake .18s}
+  @keyframes shake{ 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+
+  /* ---------- Input ---------- */
+  #typeBox{
+    width:100%; padding:14px 16px; font-size:20px;
+    font-family:Consolas,"Courier New",monospace;
+    background:#0b1017; color:var(--text);
+    border:2px solid var(--line); border-radius:10px; outline:none;
+  }
+  #typeBox:focus{border-color:var(--accent)}
+  #typeBox.bad{border-color:var(--bad)}
+
+  .row{display:flex; gap:10px; align-items:center; margin-top:12px}
+  button{
+    background:var(--accent); color:#06121f; border:none; cursor:pointer;
+    font-size:15px; font-weight:700; padding:10px 18px; border-radius:8px;
+  }
+  button:hover{filter:brightness(1.1)}
+  .hint{color:var(--muted); font-size:13px}
+
+  /* ---------- Start / Game over overlay ---------- */
+  #overlay{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,.72); backdrop-filter:blur(2px);
+  }
+  #overlay.hidden{display:none}
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:28px 30px; max-width:520px; text-align:center;
+  }
+  .card h2{margin:0 0 10px; font-size:28px}
+  .card p{color:var(--muted); line-height:1.6; margin:0 0 8px}
+  .card .big{color:var(--text); font-size:16px}
+  .card ul{text-align:left; color:var(--muted); line-height:1.7; padding-left:20px; margin:12px 0}
+  .keys{display:flex; gap:14px; justify-content:center; margin:16px 0}
+  .keys div{background:#0b1017; border:1px solid var(--line); border-radius:8px; padding:8px 14px}
+  .keys b{display:block; color:var(--accent); font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="game">
+  <h1>Police Chase Typing</h1>
+  <p class="sub">Type the sentence exactly as shown. Every correct letter pulls you away from the police car.</p>
+
+  <!-- Top stats -->
+  <div class="stats">
+    <div class="stat"><div class="label">SCORE</div><div class="value" id="score">0</div></div>
+    <div class="stat"><div class="label">LEVEL</div><div class="value" id="level">1</div></div>
+    <div class="stat"><div class="label">WPM</div><div class="value" id="wpm">0</div></div>
+    <div class="stat"><div class="label">ACCURACY</div><div class="value" id="acc">100%</div></div>
+  </div>
+
+  <!-- Scene -->
+  <div class="scene">
+    <div class="moon">&#127769;</div>
+    <div class="road"></div>
+    <div class="lane"></div>
+    <div class="car" id="playerCar">&#128661;</div>
+    <div class="car" id="policeCar">&#128679;</div>
+  </div>
+
+  <!-- Distance bar -->
+  <div class="distwrap">
+    <div class="distlabel"><span>POLICE &#128679;</span><span id="distText">SAFE</span><span>YOU &#128661;</span></div>
+    <div class="distbar"><div id="distFill"></div></div>
+  </div>
+
+  <!-- Sentence to type -->
+  <div class="prompt" id="prompt">Press START to begin</div>
+
+  <!-- Input -->
+  <input id="typeBox" type="text" autocomplete="off" autocorrect="off" autocapitalize="off"
+         spellcheck="false" placeholder="Start typing here..." disabled />
+
+  <div class="row">
+    <button id="startBtn">Start Game</button>
+    <span class="hint">No Enter key needed &mdash; a sentence finishes the moment you type it correctly.</span>
+  </div>
+</div>
+
+<!-- Start / Game over pop-up -->
+<div id="overlay">
+  <div class="card" id="card">
+    <h2 id="cardTitle">Police Chase Typing</h2>
+    <p id="cardText">You are the getaway driver. Type the sentences to stay ahead.</p>
+    <ul>
+      <li>Type the sentence in the box, letter for letter (capital letters count).</li>
+      <li>Correct letters push you forward. Mistakes let the police close in.</li>
+      <li>Clear 4 sentences to reach the next, faster level.</li>
+      <li>If the police car catches you, the chase is over.</li>
+    </ul>
+    <p class="big" id="cardStats"></p>
+    <button id="cardBtn">Start Chase</button>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   POLICE CHASE TYPING - beginner friendly single-file game
+   Everything below is plain JavaScript. Read top to bottom.
+   ===================================================================== */
+
+/* ---------- 1. Sentences for each level ------------------------------- */
+const LEVELS = [
+  { // Level 1 - short and easy
+    words: ["red light","siren","fast lane","police","speed","brake","turn left",
+            "cop car","night","escape","map","tire","fuel","radar","exit ramp",
+            "chase","slow down","hold on","back road","no plates"],
+    closeRate: 1.0        // how fast the police gain on you per second
+  },
+  { // Level 2 - short phrases
+    words: ["take the next exit","the siren is loud","keep driving straight",
+            "lost him in traffic","sharp turn ahead","the road is wet",
+            "radio for backup","we need more fuel","he is right behind us",
+            "do not stop now"],
+    closeRate: 1.5
+  },
+  { // Level 3 - full sentences
+    words: ["Pull over the car right now","The lights are flashing behind us",
+            "Two officers are following at a distance","Keep driving until you reach the bridge",
+            "The stolen car sped through the red light","Check the mirror before you turn",
+            "Dispatcher says a helicopter is above us"],
+    closeRate: 2.1
+  }
+];
+
+/* ---------- 2. Tuning numbers (change these to make it easier/harder) - */
+const MAX_DISTANCE   = 100;  // full bar
+const START_DISTANCE = 55;   // you start just over half a bar ahead
+const PER_LETTER     = 0.7;  // gained per correct letter
+const SENTENCE_BONUS = 10;   // extra push for finishing a sentence
+const ERROR_PENALTY  = 3;    // lost per wrong keystroke
+const LEVEL_UP_EVERY = 4;    // sentences needed to level up
+
+/* ---------- 3. Shortcuts to page elements ----------------------------- */
+const el = {
+  prompt   : document.getElementById("prompt"),
+  input    : document.getElementById("typeBox"),
+  score    : document.getElementById("score"),
+  level    : document.getElementById("level"),
+  wpm      : document.getElementById("wpm"),
+  acc      : document.getElementById("acc"),
+  distFill : document.getElementById("distFill"),
+  distText : document.getElementById("distText"),
+  police   : document.getElementById("policeCar"),
+  startBtn : document.getElementById("startBtn"),
+  overlay  : document.getElementById("overlay"),
+  cardTitle: document.getElementById("cardTitle"),
+  cardText : document.getElementById("cardText"),
+  cardStats: document.getElementById("cardStats"),
+  cardBtn  : document.getElementById("cardBtn")
+};
+
+/* ---------- 4. Game state (all variables in one place) ---------------- */
+let state = null;   // holds everything while a game is running
+
+function freshGame(){
+  state = {
+    playing    : true,
+    sentence   : "",
+    typed      : "",
+    score      : 0,
+    level      : 1,
+    cleared    : 0,     // sentences finished
+    distance   : START_DISTANCE,
+    keystrokes : 0,     // every key pressed
+    hits       : 0,     // correct keys pressed
+    startTime  : null,  // set on the first key press
+    lastPick   : -1
+  };
+}
+
+/* ---------- 5. Drawing the sentence with colours ---------------------- */
+function showSentence(){
+  const s = state.sentence;
+  let html = "";
+  for (let i = 0; i < s.length; i++){
+    let cls = "ch";
+    if (i < state.typed.length){
+      cls += (state.typed[i] === s[i]) ? " done" : " err";
+    } else if (i === state.typed.length){
+      cls += " cur";
+    }
+    html += '<span class="' + cls + '">' + escapeHtml(s[i]) + "</span>";
+  }
+  el.prompt.innerHTML = html;
+  el.prompt.classList.remove("shake");
+}
+
+function escapeHtml(c){
+  if (c === "&") return "&amp;";
+  if (c === "<") return "&lt;";
+  if (c === ">") return "&gt;";
+  return c;
+}
+
+/* ---------- 6. Pick the next sentence --------------------------------- */
+function nextSentence(){
+  const bank = LEVELS[Math.min(state.level - 1, LEVELS.length - 1)].words;
+  let pick;
+  do { pick = Math.floor(Math.random() * bank.length); } while (pick === state.lastPick && bank.length > 1);
+  state.lastPick = pick;
+  state.sentence = bank[pick];
+  state.typed    = "";
+  el.input.value = "";
+  showSentence();
+}
+
+/* ---------- 7. Reading what the player types -------------------------- */
+el.input.addEventListener("input", function(){
+  if (!state || !state.playing) return;
+
+  if (state.startTime === null) state.startTime = Date.now();  // timer starts now
+
+  const value  = el.input.value;
+  const before = state.typed.length;
+
+  // Count keys: every added character is a keystroke.
+  if (value.length > before) state.keystrokes += (value.length - before);
+
+  const isPrefix = state.sentence.startsWith(value);
+  const newChar  = value.length > before;
+
+  if (isPrefix){
+    // Good typing
+    if (newChar){
+      state.hits += 1;
+      addDistance(PER_LETTER);
+      state.score += 1;
+    }
+    el.input.classList.remove("bad");
+  } else {
+    // Mistake: count it, penalise, shake the box
+    if (newChar){
+      addDistance(-ERROR_PENALTY);
+      if (state.score > 0) state.score -= 2;
+      el.input.classList.add("bad");
+      el.prompt.classList.add("shake");
+    }
+  }
+
+  state.typed = value;
+  showSentence();
+
+  // Sentence complete?
+  if (value === state.sentence){
+    state.cleared += 1;
+    state.score   += 10 + state.sentence.length;
+    addDistance(SENTENCE_BONUS);
+
+    if (state.cleared % LEVEL_UP_EVERY === 0 && state.level < LEVELS.length){
+      state.level += 1;
+      addDistance(12);                       // reward for levelling up
+    }
+    nextSentence();
+    updateHud();
+  }
+});
+
+/* ---------- 8. Distance helper --------------------------------------- */
+function addDistance(amount){
+  state.distance = Math.max(0, Math.min(MAX_DISTANCE, state.distance + amount));
+}
+
+/* ---------- 9. The police car position (runs 10 times a second) ------- */
+let ticker = null;
+function tick(){
+  if (!state || !state.playing) return;
+
+  const cfg = LEVELS[Math.min(state.level - 1, LEVELS.length - 1)];
+  addDistance(-cfg.closeRate * 0.1);         // 0.1 second has passed
+
+  if (state.distance <= 0){
+    endGame(false);
+    return;
+  }
+  updateScene();
+  updateHud();
+}
+
+/* ---------- 10. Updating the visuals --------------------------------- */
+function updateScene(){
+  const pct = state.distance / MAX_DISTANCE;
+
+  // bar
+  el.distFill.style.width = (pct * 100) + "%";
+  el.distFill.style.background = pct > 0.55 ? "var(--good)" : (pct > 0.25 ? "#d29922" : "var(--bad)");
+
+  // label
+  el.distText.textContent = pct > 0.55 ? "SAFE" : (pct > 0.25 ? "CLOSING IN" : "ALMOST BUSTED");
+  el.distText.style.color = pct > 0.25 ? "var(--muted)" : "var(--bad)";
+
+  // police car slides from x=8% (far) to x=68% (touching you at 72%)
+  el.police.style.left = (8 + (1 - pct) * 60) + "%";
+}
+
+function updateHud(){
+  el.score.textContent = state.score;
+  el.level.textContent = state.level;
+
+  if (state.startTime){
+    const minutes = (Date.now() - state.startTime) / 60000;
+    el.wpm.textContent = minutes > 0 ? Math.round((state.hits / 5) / minutes) : 0;
+  }
+  el.acc.textContent = state.keystrokes ? Math.round(state.hits / state.keystrokes * 100) + "%" : "100%";
+}
+
+/* ---------- 11. Start / end ------------------------------------------ */
+function startGame(){
+  freshGame();
+  nextSentence();
+  updateScene();
+  updateHud();
+  el.input.disabled = false;
+  el.input.value    = "";
+  el.input.focus();
+  el.overlay.classList.add("hidden");
+  if (ticker) clearInterval(ticker);
+  ticker = setInterval(tick, 100);
+}
+
+function endGame(manual){
+  state.playing = false;
+  clearInterval(ticker);
+  el.input.disabled = true;
+
+  const wpm = el.wpm.textContent;
+  const acc = el.acc.textContent;
+
+  el.overlay.classList.remove("hidden");
+  el.cardTitle.innerHTML = "BUSTED! &#128679;";
+  el.cardText.innerHTML    = "The police car caught you on <b>level " + state.level + "</b>.";
+  el.cardStats.innerHTML   =
+    "Sentences cleared: <b>" + state.cleared + "</b><br>" +
+    "Score: <b>" + state.score + "</b><br>" +
+    "Speed: <b>" + wpm + " WPM</b><br>" +
+    "Accuracy: <b>" + acc + "</b>";
+  el.cardBtn.textContent = "Play Again";
+  el.cardBtn.focus();
+}
+
+/* ---------- 12. Buttons ---------------------------------------------- */
+el.startBtn.addEventListener("click", startGame);
+el.cardBtn.addEventListener("click", startGame);
+
+// Keep focus in the typing box when clicking anywhere on the page
+document.addEventListener("click", function(e){
+  if (state && state.playing && e.target.tagName !== "BUTTON"){
+    el.input.focus();
+  }
+});
+</script>
+
+</body>
+</html>
